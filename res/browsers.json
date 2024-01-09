@@ -1,0 +1,8 @@
+{
+  "Edge" : {
+    "launchOptions" : "--window-size=1024,640 --force-device-scale-factor=1.25 --device-scale-factor=1.25 --kiosk \"%1\""
+  },
+  "Chrome" : {
+    "launchOptions" : "-window-size=1024,640 --force-device-scale-factor=1.25 --device-scale-factor=1.25 --new-window --kiosk \"%1\""
+  }
+}
