@@ -1,4 +1,4 @@
-FROM ubuntu:jammy
+FROM tyrannicelite/ubuntu-qt-static:qt6.2.0
 
 RUN apt-get update
 RUN apt-get install -y software-properties-common gpg wget
