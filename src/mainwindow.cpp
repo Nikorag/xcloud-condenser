@@ -8,7 +8,6 @@
 #include <QTreeWidget>
 #include <QStandardItem>
 
-#include "../cmake-build-debug/_deps/cpp-steam-tools-src/include/steamtools.h"
 #include "../include/browserselectdialog.h"
 #include "../include/gamepassapi.h"
 #include "../include/settingsdialog.h"

@@ -10,7 +10,7 @@
 #include "gamepassgame.h"
 #include "sgdbenums.h"
 #include "xcchelper.h"
-#include "../cmake-build-debug/_deps/cpp-steam-tools-src/include/steamtools.h"
+#include "steamtools.h"
 
 class MainWindow : public QMainWindow
 {

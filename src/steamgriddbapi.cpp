@@ -75,7 +75,7 @@ void SteamGridDb::handleSearchResponse(ArtworkType type, QString searchTerm, con
         QString gameName = game.value("name").toString();
         if (gameName == searchTerm) {
             std::cout << QJsonDocument(game).toJson().toStdString() << std::endl;
-            QString gameId = QString::number(game.value("id").toInteger());
+            QString gameId = QString::number(game.value("id").toInt());
             getArtwork(gameId, type, 0);
         }
     }

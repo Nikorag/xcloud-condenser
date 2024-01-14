@@ -3,13 +3,14 @@
 set -xe
 cd "`dirname $(readlink -f ${0})`"
 
-podman build -t chiaki-jammy . -f Dockerfile.jammy
+podman build -t xcloud-condenser-jammy . -f Dockerfile.jammy
 cd ..
 podman run --rm \
-	-v "`pwd`:/build/chiaki" \
-	-w "/build/chiaki" \
+	--name="github-build" \
+	-v "`pwd`:/build/xcloud-condenser" \
+	-w "/build/xcloud-condenser" \
 	--device /dev/fuse \
 	--cap-add SYS_ADMIN \
-	-t chiaki-jammy \
+	-t xcloud-condenser-jammy \
 	/bin/bash -c "scripts/build-appimage.sh /build/appdir"
 
