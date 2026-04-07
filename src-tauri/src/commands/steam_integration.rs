@@ -218,12 +218,6 @@ pub async fn add_games_to_steam(
         .await
         .map_err(|e| format!("Failed to create grid directory: {}", e))?;
 
-    // Create launchers directory
-    let launchers_dir = userdata.join("config").join("xcloud-launchers");
-    fs::create_dir_all(&launchers_dir)
-        .await
-        .map_err(|e| format!("Failed to create launchers directory: {}", e))?;
-
     // Backup existing shortcuts.vdf before modifying
     if shortcuts_path.exists() {
         let timestamp = std::time::SystemTime::now()
@@ -277,7 +271,6 @@ pub async fn add_games_to_steam(
             &client,
             game,
             &chrome_path,
-            &launchers_dir,
             &grid_dir,
             inner_map,
             next_index,
@@ -323,43 +316,56 @@ async fn process_game(
     client: &reqwest::Client,
     game: &GameToAdd,
     chrome_path: &str,
-    launchers_dir: &Path,
     grid_dir: &Path,
     shortcuts: &mut BTreeMap<String, VdfValue>,
     index: u32,
     os: &str,
 ) -> Result<(), String> {
-    // 1. Generate and write launcher script
-    let sanitized = sanitize_filename(&game.name);
-    let (script_name, script_content) = match os {
-        "windows" => (
-            format!("{}.bat", sanitized),
-            generate_windows_launcher(&game.name, &game.launch_url, chrome_path),
-        ),
-        _ => (
-            format!("{}.sh", sanitized),
-            generate_linux_launcher(&game.name, &game.launch_url, chrome_path),
-        ),
+    let (exe_str, start_dir, launch_options) = match os {
+        "linux" => {
+            // Linux/Steam Deck: use flatpak to launch Chrome directly — no launcher script needed
+            let exe = "/usr/bin/flatpak".to_string();
+            let start_dir = "/usr/bin".to_string();
+            let launch_opts = format!(
+                "run --branch=stable --arch=x86_64 --command=/app/bin/chrome \
+                 --file-forwarding com.google.Chrome @@u @@ \
+                 --window-size=1024,640 --force-device-scale-factor=1.25 \
+                 --device-scale-factor=1.25 --kiosk \"{}\"",
+                game.launch_url
+            );
+            (exe, start_dir, launch_opts)
+        }
+        "windows" => {
+            // Windows: launch Chrome directly with args
+            let exe = chrome_path.to_string();
+            let dir = PathBuf::from(chrome_path)
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let launch_opts = format!(
+                "--app=\"{}\" --start-fullscreen --disable-infobars \
+                 --disable-session-crashed-bubble --disable-features=TranslateUI",
+                game.launch_url
+            );
+            (exe, dir, launch_opts)
+        }
+        _ => {
+            // macOS: launch Chrome directly with args
+            let exe = chrome_path.to_string();
+            let dir = PathBuf::from(chrome_path)
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let launch_opts = format!(
+                "--app=\"{}\" --start-fullscreen --disable-infobars \
+                 --disable-session-crashed-bubble --disable-features=TranslateUI",
+                game.launch_url
+            );
+            (exe, dir, launch_opts)
+        }
     };
 
-    let script_path = launchers_dir.join(&script_name);
-    fs::write(&script_path, &script_content)
-        .await
-        .map_err(|e| format!("Failed to write launcher: {}", e))?;
-
-    // Make executable on Unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o755);
-        std::fs::set_permissions(&script_path, perms)
-            .map_err(|e| format!("Failed to chmod: {}", e))?;
-    }
-
-    let exe_str = script_path.to_string_lossy().to_string();
-    let start_dir = launchers_dir.to_string_lossy().to_string();
-
-    // 2. Create shortcut entry
+    // Create shortcut entry
     let appid = generate_shortcut_id(&exe_str, &game.name);
     let mut entry = BTreeMap::new();
     entry.insert("appid".to_string(), VdfValue::Int32(appid));
@@ -368,7 +374,7 @@ async fn process_game(
     entry.insert("StartDir".to_string(), VdfValue::String(format!("\"{}\"", start_dir)));
     entry.insert("icon".to_string(), VdfValue::String(String::new()));
     entry.insert("ShortcutPath".to_string(), VdfValue::String(String::new()));
-    entry.insert("LaunchOptions".to_string(), VdfValue::String(String::new()));
+    entry.insert("LaunchOptions".to_string(), VdfValue::String(launch_options));
     entry.insert("IsHidden".to_string(), VdfValue::Int32(0));
     entry.insert("AllowDesktopConfig".to_string(), VdfValue::Int32(1));
     entry.insert("AllowOverlay".to_string(), VdfValue::Int32(1));
@@ -474,35 +480,6 @@ async fn fetch_and_save_artwork(
 // Launcher Script Generation
 // ============================================================================
 
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| if "<>:\"/\\|?*".contains(c) || c.is_whitespace() { '_' } else { c })
-        .collect()
-}
-
-fn generate_windows_launcher(name: &str, launch_url: &str, chrome_path: &str) -> String {
-    format!(
-        r#"@echo off
-REM XCloud Condenser - {}
-REM Launch XCloud game in fullscreen Chrome app mode
-
-start "" "{}" --app="{}" --start-fullscreen --disable-infobars --disable-session-crashed-bubble --disable-features=TranslateUI
-"#,
-        name, chrome_path, launch_url
-    )
-}
-
-fn generate_linux_launcher(name: &str, launch_url: &str, chrome_path: &str) -> String {
-    format!(
-        r#"#!/bin/bash
-# XCloud Condenser - {}
-# Launch XCloud game in fullscreen Chrome app mode
-
-"{}" --app="{}" --start-fullscreen --disable-infobars --disable-session-crashed-bubble --disable-features=TranslateUI
-"#,
-        name, chrome_path, launch_url
-    )
-}
 
 // ============================================================================
 // Backup Management
