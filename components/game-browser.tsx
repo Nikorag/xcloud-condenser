@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/lib/store";
 import { GameCard } from "./game-card";
 import { Input } from "@/components/ui/input";
 import { Search, Loader2, RefreshCw, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+const BATCH_SIZE = 36; // Number of games to render per batch
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
@@ -57,6 +59,44 @@ export function GameBrowser() {
     const query = searchQuery.toLowerCase();
     return games.filter((game) => game.name.toLowerCase().includes(query));
   }, [games, searchQuery]);
+
+  // Incremental rendering: only render BATCH_SIZE items at a time
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Reset visible count when search changes
+  useEffect(() => {
+    setVisibleCount(BATCH_SIZE);
+  }, [searchQuery]);
+
+  const visibleGames = useMemo(
+    () => filteredGames.slice(0, visibleCount),
+    [filteredGames, visibleCount]
+  );
+
+  const hasMore = visibleCount < filteredGames.length;
+
+  // IntersectionObserver to load more games as user scrolls
+  const loadMore = useCallback(() => {
+    setVisibleCount((prev) => Math.min(prev + BATCH_SIZE, filteredGames.length));
+  }, [filteredGames.length]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          loadMore();
+        }
+      },
+      { rootMargin: "400px" } // Start loading before sentinel is visible
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore]);
 
   return (
     <div className="flex h-full flex-col">
@@ -110,11 +150,20 @@ export function GameBrowser() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-            {filteredGames.map((game) => (
-              <GameCard key={game.id} game={game} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {visibleGames.map((game) => (
+                <GameCard key={game.id} game={game} />
+              ))}
+            </div>
+            {/* Sentinel element triggers loading more games */}
+            <div ref={sentinelRef} className="h-4" />
+            {hasMore && (
+              <div className="flex justify-center py-4 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            )}
+          </>
         )}
       </div>
 

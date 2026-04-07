@@ -23,6 +23,22 @@ Download the latest release from the [Releases](https://github.com/Nikorag/xclou
 - **macOS**: `.dmg`
 - **Linux / Steam Deck**: `.AppImage`
 
+### Verifying Your Download
+
+Each release includes SHA256 checksums and a build provenance attestation so you can verify the binary hasn't been tampered with.
+
+**Checksum verification:**
+```bash
+sha256sum -c SHA256SUMS.txt
+```
+
+**Provenance verification** (requires [GitHub CLI](https://cli.github.com/)):
+```bash
+gh attestation verify xcloud-condenser*.AppImage --repo Nikorag/xcloud-condenser
+```
+
+This cryptographically proves the binary was built in GitHub Actions from the source code in this repository.
+
 ### Steam Deck
 
 1. Download the `.AppImage` from Releases

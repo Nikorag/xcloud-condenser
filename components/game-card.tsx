@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import type { XCloudGame } from "@/types";
@@ -9,9 +10,11 @@ interface GameCardProps {
   game: XCloudGame;
 }
 
-export function GameCard({ game }: GameCardProps) {
-  const { selectedGames, toggleGameSelection } = useAppStore();
-  const isSelected = selectedGames.some((g) => g.id === game.id);
+export const GameCard = memo(function GameCard({ game }: GameCardProps) {
+  const isSelected = useAppStore(
+    (state) => state.selectedGames.some((g) => g.id === game.id)
+  );
+  const toggleGameSelection = useAppStore((state) => state.toggleGameSelection);
 
   return (
     <button
@@ -45,6 +48,7 @@ export function GameCard({ game }: GameCardProps) {
             alt={game.name}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             loading="lazy"
+            decoding="async"
           />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -64,4 +68,4 @@ export function GameCard({ game }: GameCardProps) {
       </div>
     </button>
   );
-}
+});

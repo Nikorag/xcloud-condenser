@@ -84,6 +84,9 @@ pub async fn detect_steam_config() -> Result<SteamConfig, String> {
     let mut users = Vec::new();
 
     if userdata_path.exists() {
+        // Resolve symlinks in userdata path itself
+        let userdata_path = std::fs::canonicalize(&userdata_path).unwrap_or(userdata_path);
+
         let mut entries = fs::read_dir(&userdata_path)
             .await
             .map_err(|e| format!("Failed to read userdata: {}", e))?;
@@ -93,12 +96,16 @@ pub async fn detect_steam_config() -> Result<SteamConfig, String> {
             .await
             .map_err(|e| format!("Failed to read entry: {}", e))?
         {
-            let path = entry.path();
+            // Resolve symlinks for each entry
+            let path = match std::fs::canonicalize(entry.path()) {
+                Ok(p) => p,
+                Err(_) => entry.path(),
+            };
             if !path.is_dir() {
                 continue;
             }
 
-            let id = match path.file_name().and_then(|n| n.to_str()) {
+            let id = match entry.file_name().to_str() {
                 Some(name) if name.chars().all(|c| c.is_ascii_digit()) => name.to_string(),
                 _ => continue,
             };
@@ -124,6 +131,20 @@ pub async fn detect_steam_config() -> Result<SteamConfig, String> {
     })
 }
 
+/// Expand `~` to the home directory and resolve symlinks
+fn resolve_path(path: &str) -> PathBuf {
+    let expanded = if path.starts_with('~') {
+        if let Some(home) = dirs::home_dir() {
+            home.join(path.strip_prefix("~/").unwrap_or(&path[1..]))
+        } else {
+            PathBuf::from(path)
+        }
+    } else {
+        PathBuf::from(path)
+    };
+    std::fs::canonicalize(&expanded).unwrap_or(expanded)
+}
+
 fn find_steam_path() -> Option<PathBuf> {
     let os = std::env::consts::OS;
     let home = dirs::home_dir()?;
@@ -147,7 +168,12 @@ fn find_steam_path() -> Option<PathBuf> {
         _ => vec![],
     };
 
-    candidates.into_iter().find(|p| p.exists())
+    candidates
+        .into_iter()
+        .find(|p| p.exists())
+        // Resolve symlinks (e.g. ~/.steam/steam -> ~/.local/share/Steam)
+        // so the returned path is always a real absolute path
+        .map(|p| std::fs::canonicalize(&p).unwrap_or(p))
 }
 
 async fn read_persona_name(userdata_dir: &Path) -> Option<String> {
@@ -180,7 +206,8 @@ pub async fn add_games_to_steam(
     steam_user_id: String,
 ) -> Result<AddToSteamResult, String> {
     let os = std::env::consts::OS;
-    let steam_base = PathBuf::from(&steam_path);
+    // Resolve ~ and symlinks in the provided steam path
+    let steam_base = resolve_path(&steam_path);
     let userdata = steam_base.join("userdata").join(&steam_user_id);
     let config_dir = userdata.join("config");
     let grid_dir = config_dir.join("grid");
@@ -494,7 +521,7 @@ pub async fn list_shortcuts_backups(
     steam_path: String,
     steam_user_id: String,
 ) -> Result<Vec<BackupEntry>, String> {
-    let backup_dir = PathBuf::from(&steam_path)
+    let backup_dir = resolve_path(&steam_path)
         .join("userdata")
         .join(&steam_user_id)
         .join("config")
@@ -549,7 +576,7 @@ pub async fn restore_shortcuts_backup(
     steam_user_id: String,
     filename: String,
 ) -> Result<(), String> {
-    let config_dir = PathBuf::from(&steam_path)
+    let config_dir = resolve_path(&steam_path)
         .join("userdata")
         .join(&steam_user_id)
         .join("config");

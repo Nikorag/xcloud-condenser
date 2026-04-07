@@ -8,6 +8,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
 jobs:
   build-linux:
     runs-on: ubuntu-22.04
@@ -56,9 +61,34 @@ jobs:
         with:
           args: --bundles appimage
 
+      - name: Generate SHA256 checksums
+        run: |
+          cd src-tauri/target/release/bundle/appimage
+          sha256sum *.AppImage > SHA256SUMS.txt
+          echo "### SHA256 Checksums" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat SHA256SUMS.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: src-tauri/target/release/bundle/appimage/*.AppImage
+
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
           name: xcloud-condenser-appimage
-          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/SHA256SUMS.txt
           if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/SHA256SUMS.txt
+          generate_release_notes: true
