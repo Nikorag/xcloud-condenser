@@ -38,8 +38,9 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
 
           {/* Description */}
           <p className="text-center text-sm text-muted-foreground">
-            Add Xbox Cloud Gaming titles to your Steam library with custom
-            artwork from SteamGridDB. Works on macOS, Linux, and Steam Deck.
+            Add Xbox Cloud Gaming titles and streaming services to your Steam
+            library with custom artwork from SteamGridDB. Works on macOS,
+            Linux, and Steam Deck.
           </p>
 
           {/* Links */}

@@ -3,13 +3,15 @@
 import { useState } from "react";
 import { useAppStore } from "@/lib/store";
 import { GameBrowser } from "@/components/game-browser";
+import { StreamingServiceBrowser } from "@/components/streaming-service-browser";
 import { SelectedGamesPanel } from "@/components/selected-games-panel";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { ExportDialog } from "@/components/export-dialog";
 import { ArtworkDialog } from "@/components/artwork-dialog";
 import { AboutDialog } from "@/components/about-dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Settings, Cloud, Info } from "lucide-react";
+import { Settings, Info, Gamepad2, Tv } from "lucide-react";
 
 export default function HomePage() {
   const { setSettingsOpen, setExportDialogOpen, exportDialogOpen } = useAppStore();
@@ -21,15 +23,17 @@ export default function HomePage() {
       {/* Header */}
       <header className="flex items-center justify-between border-b border-border bg-card px-4 py-3 lg:px-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-            <Cloud className="h-5 w-5 text-primary-foreground" />
-          </div>
+          <img
+            src="/icon.png"
+            alt="XCloud Condenser"
+            className="h-9 w-9 rounded-lg"
+          />
           <div>
             <h1 className="text-lg font-semibold leading-none">
               XCloud Condenser
             </h1>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Create Steam shortcuts for Xbox Cloud Gaming
+              Add games and apps to Steam
             </p>
           </div>
         </div>
@@ -56,10 +60,28 @@ export default function HomePage() {
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Game browser (main area) */}
-        <main className="flex-1 overflow-hidden">
-          <GameBrowser />
-        </main>
+        <Tabs defaultValue="xcloud" className="flex-1 flex flex-col overflow-hidden">
+          <div className="border-b border-border bg-card px-4 pt-2">
+            <TabsList>
+              <TabsTrigger value="xcloud" className="gap-1.5">
+                <Gamepad2 className="h-4 w-4" />
+                XCloud Games
+              </TabsTrigger>
+              <TabsTrigger value="streaming" className="gap-1.5">
+                <Tv className="h-4 w-4" />
+                Streaming
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value="xcloud" className="flex-1 overflow-hidden m-0">
+            <GameBrowser />
+          </TabsContent>
+
+          <TabsContent value="streaming" className="flex-1 overflow-hidden m-0">
+            <StreamingServiceBrowser />
+          </TabsContent>
+        </Tabs>
 
         {/* Selected games sidebar */}
         <aside className="hidden w-80 flex-shrink-0 border-l border-border bg-card lg:block">

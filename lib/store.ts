@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { XCloudGame, SelectedGame, AppSettings, SteamGridArt } from "@/types";
+import type { StreamingService } from "@/lib/streaming-services";
 
 interface AppState {
   // Game catalog
@@ -18,6 +19,11 @@ interface AppState {
   removeSelectedGame: (gameId: string) => void;
   clearSelectedGames: () => void;
   updateGameArt: (gameId: string, art: SteamGridArt) => void;
+
+  // Custom streaming services
+  customServices: StreamingService[];
+  addCustomService: (service: StreamingService) => void;
+  removeCustomService: (id: string) => void;
 
   // Search and filters
   searchQuery: string;
@@ -95,6 +101,21 @@ export const useAppStore = create<AppState>()(
         });
       },
       clearSelectedGames: () => set({ selectedGames: [] }),
+
+      // Custom streaming services
+      customServices: [],
+      addCustomService: (service) => {
+        const { customServices } = get();
+        if (!customServices.find((s) => s.id === service.id)) {
+          set({ customServices: [...customServices, service] });
+        }
+      },
+      removeCustomService: (id) => {
+        set({
+          customServices: get().customServices.filter((s) => s.id !== id),
+          selectedGames: get().selectedGames.filter((g) => g.id !== id),
+        });
+      },
       updateGameArt: (gameId, art) => {
         set({
           selectedGames: get().selectedGames.map((g) =>
@@ -125,6 +146,7 @@ export const useAppStore = create<AppState>()(
         settings: state.settings,
         games: state.games,
         gamesLastFetched: state.gamesLastFetched,
+        customServices: state.customServices,
       }),
     }
   )

@@ -69,6 +69,8 @@ struct SteamGridImagesResponse {
 #[derive(Debug, Deserialize)]
 struct SteamGridImage {
     url: String,
+    width: u32,
+    height: u32,
 }
 
 // ============================================================================
@@ -365,14 +367,23 @@ async fn process_game(
         }
     };
 
-    // Create shortcut entry
+    // Fetch and save artwork from SteamGridDB (do this first so we can set the icon path)
     let appid = generate_shortcut_id(&exe_str, &game.name);
+    let icon_path = match fetch_and_save_artwork(client, &game.name, appid, grid_dir).await {
+        Ok(icon) => icon.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("Artwork fetch failed for {}: {}", game.name, e);
+            String::new()
+        }
+    };
+
+    // Create shortcut entry
     let mut entry = BTreeMap::new();
     entry.insert("appid".to_string(), VdfValue::Int32(appid));
     entry.insert("AppName".to_string(), VdfValue::String(game.name.clone()));
     entry.insert("exe".to_string(), VdfValue::String(format!("\"{}\"", exe_str)));
     entry.insert("StartDir".to_string(), VdfValue::String(format!("\"{}\"", start_dir)));
-    entry.insert("icon".to_string(), VdfValue::String(String::new()));
+    entry.insert("icon".to_string(), VdfValue::String(icon_path));
     entry.insert("ShortcutPath".to_string(), VdfValue::String(String::new()));
     entry.insert("LaunchOptions".to_string(), VdfValue::String(launch_options));
     entry.insert("IsHidden".to_string(), VdfValue::Int32(0));
@@ -392,12 +403,6 @@ async fn process_game(
 
     shortcuts.insert(index.to_string(), VdfValue::Map(entry));
 
-    // 3. Fetch and save artwork from SteamGridDB
-    if let Err(e) = fetch_and_save_artwork(client, &game.name, &exe_str, grid_dir).await {
-        eprintln!("Artwork fetch failed for {}: {}", game.name, e);
-        // Non-fatal — game is still added
-    }
-
     Ok(())
 }
 
@@ -405,12 +410,13 @@ async fn process_game(
 // SteamGridDB Artwork
 // ============================================================================
 
+/// Fetches and saves artwork from SteamGridDB. Returns the icon file path if one was downloaded.
 async fn fetch_and_save_artwork(
     client: &reqwest::Client,
     game_name: &str,
-    exe: &str,
+    shortcut_id: u32,
     grid_dir: &Path,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     // Search for the game
     let search_url = format!(
         "{}/search/autocomplete/{}",
@@ -433,51 +439,78 @@ async fn fetch_and_save_artwork(
         .and_then(|d| d.first().map(|r| r.id))
         .ok_or_else(|| "No SteamGridDB results found".to_string())?;
 
-    let shortcut_id = generate_shortcut_id(exe, game_name);
+    // Fetch grids — Steam uses two grid sizes:
+    //   600x900 portrait  → {id}p.png
+    //   920x430 landscape → {id}.png
+    if let Some(images) = fetch_images(client, "grids", game_id).await {
+        // Portrait grid (600x900)
+        if let Some(img) = images.iter().find(|i| i.width == 600 && i.height == 900) {
+            download_image(client, &img.url, &grid_dir.join(format!("{}p.png", shortcut_id))).await;
+        }
+        // Landscape grid (920x430)
+        if let Some(img) = images.iter().find(|i| i.width == 920 && i.height == 430) {
+            download_image(client, &img.url, &grid_dir.join(format!("{}.png", shortcut_id))).await;
+        }
+    }
 
-    // Fetch and save each artwork type
+    // Fetch heroes and logos
     let art_types = [
-        ("grids", format!("{}p.png", shortcut_id)),
         ("heroes", format!("{}_hero.png", shortcut_id)),
         ("logos", format!("{}_logo.png", shortcut_id)),
-        ("icons", format!("{}_icon.png", shortcut_id)),
     ];
 
     for (endpoint, filename) in &art_types {
-        let url = format!("{}/{}/game/{}", STEAMGRIDDB_API_URL, endpoint, game_id);
-
-        let resp = client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", STEAMGRIDDB_API_KEY))
-            .send()
-            .await;
-
-        let resp = match resp {
-            Ok(r) if r.status().is_success() => r,
-            _ => continue,
-        };
-
-        let images: SteamGridImagesResponse = match resp.json().await {
-            Ok(i) => i,
-            Err(_) => continue,
-        };
-
-        if let Some(first) = images.data.and_then(|d| d.into_iter().next()) {
-            // Download the image
-            if let Ok(img_resp) = client.get(&first.url).send().await {
-                if let Ok(bytes) = img_resp.bytes().await {
-                    let dest = grid_dir.join(filename);
-                    let _ = fs::write(&dest, &bytes).await;
-                }
+        if let Some(images) = fetch_images(client, endpoint, game_id).await {
+            if let Some(first) = images.into_iter().next() {
+                download_image(client, &first.url, &grid_dir.join(filename)).await;
             }
         }
     }
 
-    Ok(())
+    // Fetch icon and return its path so it can be set in the shortcut entry
+    let mut icon_path = None;
+    if let Some(images) = fetch_images(client, "icons", game_id).await {
+        if let Some(first) = images.into_iter().next() {
+            let icon_file = grid_dir.join(format!("{}_icon.png", shortcut_id));
+            download_image(client, &first.url, &icon_file).await;
+            if icon_file.exists() {
+                icon_path = Some(icon_file.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    Ok(icon_path)
 }
 
-// ============================================================================
-// Launcher Script Generation
+async fn fetch_images(
+    client: &reqwest::Client,
+    endpoint: &str,
+    game_id: u64,
+) -> Option<Vec<SteamGridImage>> {
+    let url = format!("{}/{}/game/{}", STEAMGRIDDB_API_URL, endpoint, game_id);
+    let resp = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", STEAMGRIDDB_API_KEY))
+        .send()
+        .await
+        .ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let parsed: SteamGridImagesResponse = resp.json().await.ok()?;
+    parsed.data
+}
+
+async fn download_image(client: &reqwest::Client, url: &str, dest: &Path) {
+    if let Ok(resp) = client.get(url).send().await {
+        if let Ok(bytes) = resp.bytes().await {
+            let _ = fs::write(dest, &bytes).await;
+        }
+    }
+}
+
 // ============================================================================
 
 

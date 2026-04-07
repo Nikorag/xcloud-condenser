@@ -6,7 +6,7 @@ A desktop app that adds Xbox Cloud Gaming titles to your Steam library with cust
 
 1. Fetches the full Xbox Game Pass cloud gaming catalog
 2. Lets you pick which games to add to Steam
-3. Automatically generates launcher scripts that open each game in Chrome's app mode
+3. Creates Steam shortcuts that launch each game directly in Chrome/Flatpak Chrome — no intermediate scripts
 4. Downloads matching artwork (grid, hero, logo, icon) from SteamGridDB
 5. Writes everything directly into Steam's config files — just restart Steam and your games appear with full artwork
 
@@ -61,7 +61,6 @@ This cryptographically proves the binary was built in GitHub Actions from the so
 ```bash
 sudo apt-get install -y \
   libwebkit2gtk-4.1-dev \
-  libappindicator3-dev \
   librsvg2-dev \
   patchelf \
   libssl-dev \
@@ -110,7 +109,9 @@ The app fetches the Xbox Game Pass cloud gaming catalog in two steps:
 When you click "Add to Steam":
 
 1. **Detects your Steam installation** and user profiles automatically
-2. **Generates launcher scripts** (`.sh` on Linux/macOS, `.bat` on Windows) that open each game in Chrome's fullscreen app mode pointing at the XCloud URL
+2. **Creates Steam shortcuts** that launch Chrome directly with the XCloud game URL — no intermediate launcher scripts:
+   - **Linux / Steam Deck**: Uses Flatpak Chrome (`/usr/bin/flatpak run com.google.Chrome`) in kiosk mode with Steam Deck-optimized scaling
+   - **Windows / macOS**: Launches the Chrome binary directly with `--app` mode and fullscreen flags
 3. **Searches SteamGridDB** for matching artwork and downloads grid, hero, logo, and icon images
 4. **Writes Steam's `shortcuts.vdf`** with properly generated shortcut IDs (CRC32-based, matching Steam's own algorithm)
 5. **Saves artwork** to Steam's `grid/` folder with the correct filenames so Steam picks them up automatically
