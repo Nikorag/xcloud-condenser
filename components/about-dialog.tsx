@@ -25,7 +25,7 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
         <div className="flex flex-col items-center gap-4 py-2">
           {/* App icon */}
           <img
-            src="/icon.svg"
+            src="/icon.png"
             alt="XCloud Condenser"
             className="h-20 w-20 rounded-2xl"
           />

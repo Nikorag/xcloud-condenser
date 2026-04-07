@@ -46,6 +46,12 @@ export interface AddToSteamResult {
   results: GameResult[];
 }
 
+export interface BackupEntry {
+  filename: string;
+  timestamp: number;
+  displayDate: string;
+}
+
 export interface SteamGridDBSearchResult {
   id: number;
   name: string;

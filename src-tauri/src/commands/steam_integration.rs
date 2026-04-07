@@ -197,6 +197,22 @@ pub async fn add_games_to_steam(
         .await
         .map_err(|e| format!("Failed to create launchers directory: {}", e))?;
 
+    // Backup existing shortcuts.vdf before modifying
+    if shortcuts_path.exists() {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let backup_dir = config_dir.join("xcloud-backups");
+        fs::create_dir_all(&backup_dir)
+            .await
+            .map_err(|e| format!("Failed to create backup directory: {}", e))?;
+        let backup_path = backup_dir.join(format!("shortcuts.vdf.{}.bak", timestamp));
+        fs::copy(&shortcuts_path, &backup_path)
+            .await
+            .map_err(|e| format!("Failed to backup shortcuts.vdf: {}", e))?;
+    }
+
     // Read existing shortcuts.vdf or create empty
     let mut shortcuts_root = if shortcuts_path.exists() {
         let data = fs::read(&shortcuts_path)
@@ -458,5 +474,132 @@ fn generate_linux_launcher(name: &str, launch_url: &str, chrome_path: &str) -> S
 "{}" --app="{}" --start-fullscreen --disable-infobars --disable-session-crashed-bubble --disable-features=TranslateUI
 "#,
         name, chrome_path, launch_url
+    )
+}
+
+// ============================================================================
+// Backup Management
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BackupEntry {
+    pub filename: String,
+    pub timestamp: u64,
+    #[serde(rename = "displayDate")]
+    pub display_date: String,
+}
+
+#[tauri::command]
+pub async fn list_shortcuts_backups(
+    steam_path: String,
+    steam_user_id: String,
+) -> Result<Vec<BackupEntry>, String> {
+    let backup_dir = PathBuf::from(&steam_path)
+        .join("userdata")
+        .join(&steam_user_id)
+        .join("config")
+        .join("xcloud-backups");
+
+    if !backup_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut entries = fs::read_dir(&backup_dir)
+        .await
+        .map_err(|e| format!("Failed to read backup directory: {}", e))?;
+
+    let mut backups = Vec::new();
+
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| format!("Failed to read entry: {}", e))?
+    {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with("shortcuts.vdf.") || !name.ends_with(".bak") {
+            continue;
+        }
+
+        // Extract timestamp from filename: shortcuts.vdf.{timestamp}.bak
+        let ts_str = name
+            .strip_prefix("shortcuts.vdf.")
+            .and_then(|s| s.strip_suffix(".bak"))
+            .unwrap_or("0");
+        let timestamp: u64 = ts_str.parse().unwrap_or(0);
+
+        // Format as human-readable date
+        let secs = timestamp;
+        let display_date = format_timestamp(secs);
+
+        backups.push(BackupEntry {
+            filename: name,
+            timestamp,
+            display_date,
+        });
+    }
+
+    // Sort newest first
+    backups.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    Ok(backups)
+}
+
+#[tauri::command]
+pub async fn restore_shortcuts_backup(
+    steam_path: String,
+    steam_user_id: String,
+    filename: String,
+) -> Result<(), String> {
+    let config_dir = PathBuf::from(&steam_path)
+        .join("userdata")
+        .join(&steam_user_id)
+        .join("config");
+    let backup_path = config_dir.join("xcloud-backups").join(&filename);
+    let shortcuts_path = config_dir.join("shortcuts.vdf");
+
+    if !backup_path.exists() {
+        return Err("Backup file not found".to_string());
+    }
+
+    fs::copy(&backup_path, &shortcuts_path)
+        .await
+        .map_err(|e| format!("Failed to restore backup: {}", e))?;
+
+    Ok(())
+}
+
+fn format_timestamp(secs: u64) -> String {
+    // Simple date formatting without chrono dependency
+    // Returns ISO-ish format: YYYY-MM-DD HH:MM:SS UTC
+    let days_since_epoch = secs / 86400;
+    let time_of_day = secs % 86400;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+    let seconds = time_of_day % 60;
+
+    // Compute year/month/day from days since 1970-01-01
+    let mut y = 1970i64;
+    let mut remaining = days_since_epoch as i64;
+    loop {
+        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        y += 1;
+    }
+    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut m = 0usize;
+    for &md in &month_days {
+        if remaining < md {
+            break;
+        }
+        remaining -= md;
+        m += 1;
+    }
+
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        y, m + 1, remaining + 1, hours, minutes, seconds
     )
 }
